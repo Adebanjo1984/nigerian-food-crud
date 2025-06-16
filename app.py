@@ -13,15 +13,6 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 app.secret_key = 'your_secret_key_here'
 
 db = SQLAlchemy(app)
-# ------------------ LOGIN REQUIRED DECORATOR ------------------
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            flash('Login required to access this page.', 'warning')
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
 
 # ------------------ MODELS ------------------
 class User(db.Model):
@@ -88,8 +79,17 @@ class Notification(db.Model):
     is_read = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime)
 
-# ------------------ ROUTES ------------------
+# ------------------ UTILS ------------------
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            flash('Login required', 'warning')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
+# ------------------ ROUTES ------------------
 @app.route('/')
 def index():
     dishes = Dish.query.limit(3).all()
@@ -192,7 +192,7 @@ def vendor_orders():
     dish_ids = [dish.id for dish in dishes]
     order_items = OrderItem.query.filter(OrderItem.dish_id.in_(dish_ids)).all()
     return render_template('vendor_orders.html', order_items=order_items)
-    
+
 @app.route('/init-db')
 def init_db():
     with app.app_context():
@@ -203,6 +203,7 @@ if __name__ == '__main__':
     with app.app_context():
         db.create_all()
     app.run(debug=True)
+
 
 
 
