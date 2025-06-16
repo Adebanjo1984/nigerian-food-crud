@@ -13,6 +13,15 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 app.secret_key = 'your_secret_key_here'
 
 db = SQLAlchemy(app)
+# ------------------ LOGIN REQUIRED DECORATOR ------------------
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            flash('Login required to access this page.', 'warning')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 # ------------------ MODELS ------------------
 class User(db.Model):
