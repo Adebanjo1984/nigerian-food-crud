@@ -78,14 +78,119 @@ class Notification(db.Model):
     is_read = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime)
 
-# ------------------ END MODELS ------------------
+# ------------------ ROUTES ------------------
 
-# Continue with your route definitions and CRUD logic here...
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'admin_logged_in' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/')
+@login_required
+def index():
+    dishes = Dish.query.all()
+    return render_template('index.html', dishes=dishes)
+
+@app.route('/home')
+def home():
+    dishes = Dish.query.limit(3).all()
+    return render_template('home.html', dishes=dishes)
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form['email']
+        password = request.form['password']
+        user = User.query.filter_by(email=email, password=password).first()
+        if user:
+            session['user_id'] = user.id
+            session['user_role'] = user.role
+            flash('Logged in successfully.', 'success')
+            return redirect(url_for('home'))
+        else:
+            flash('Invalid credentials. Please try again.', 'danger')
+    return render_template('login.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        name = request.form['name']
+        email = request.form['email']
+        password = request.form['password']
+        if User.query.filter_by(email=email).first():
+            flash('Email already registered.', 'warning')
+        else:
+            new_user = User(name=name, email=email, password=password, role='customer')
+            db.session.add(new_user)
+            db.session.commit()
+            flash('Registration successful. Please log in.', 'success')
+            return redirect(url_for('login'))
+    return render_template('register.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('login'))
+
+@app.route('/create', methods=['GET', 'POST'])
+@login_required
+def create():
+    if request.method == 'POST':
+        name = request.form['name']
+        description = request.form['description']
+        price = request.form['price']
+        category = request.form['category']
+        image = request.files['image']
+        image_filename = secure_filename(image.filename)
+        image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
+        image.save(image_path)
+        new_dish = Dish(name=name, description=description, price=price, category=category, image_url=image_filename)
+        db.session.add(new_dish)
+        db.session.commit()
+        flash('Dish added successfully.', 'success')
+        return redirect(url_for('index'))
+    return render_template('create.html')
+
+@app.route('/update/<int:id>', methods=['GET', 'POST'])
+@login_required
+def update(id):
+    dish = Dish.query.get_or_404(id)
+    if request.method == 'POST':
+        dish.name = request.form['name']
+        dish.description = request.form['description']
+        dish.price = request.form['price']
+        dish.category = request.form['category']
+        image = request.files['image']
+        if image:
+            image_filename = secure_filename(image.filename)
+            image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
+            image.save(image_path)
+            dish.image_url = image_filename
+        db.session.commit()
+        flash('Dish updated successfully.', 'info')
+        return redirect(url_for('index'))
+    return render_template('update.html', dish=dish)
+
+@app.route('/delete/<int:id>')
+@login_required
+def delete(id):
+    dish = Dish.query.get_or_404(id)
+    db.session.delete(dish)
+    db.session.commit()
+    flash('Dish deleted successfully.', 'danger')
+    return redirect(url_for('index'))
+
+# ------------------ END ROUTES ------------------
 
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
     app.run(debug=True)
+
 
 
 
