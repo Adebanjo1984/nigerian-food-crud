@@ -2,7 +2,7 @@ import os
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.utils import secure_filename
 from functools import wraps
-from models import db, Dish
+from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///nigerian_food.db'
@@ -11,101 +11,81 @@ app.config['UPLOAD_FOLDER'] = 'static/images'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 app.secret_key = 'your_secret_key_here'
 
-db.init_app(app)
+db = SQLAlchemy(app)
 
-# --- Login Required Decorator ---
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not session.get('admin_logged_in'):
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
+# ------------------ MODELS ------------------
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100))
+    email = db.Column(db.String(100), unique=True)
+    password = db.Column(db.String(100))
+    role = db.Column(db.String(50))  # e.g. customer, vendor, admin
+    reviews = db.relationship('Review', backref='user', lazy=True)
+    orders = db.relationship('Order', backref='user', lazy=True)
 
-# --- Routes ---
-@app.route('/')
-@login_required
-def index():
-    query = request.args.get('q')
-    if query:
-        dishes = Dish.query.filter(Dish.name.ilike(f"%{query}%")).all()
-    else:
-        dishes = Dish.query.all()
-    return render_template('index.html', dishes=dishes)
+class Vendor(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    business_name = db.Column(db.String(100))
+    contact_email = db.Column(db.String(100), unique=True)
+    dishes = db.relationship('Dish', backref='vendor', lazy=True)
 
-@app.route('/create', methods=['GET', 'POST'])
-@login_required
-def create():
-    if request.method == 'POST':
-        name = request.form['name']
-        description = request.form['description']
-        price = float(request.form['price'])
-        category = request.form['category']
-        image = request.files['image']
-        filename = None
-        if image:
-            filename = secure_filename(image.filename)
-            image.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+class Dish(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100))
+    description = db.Column(db.Text)
+    price = db.Column(db.Float)
+    category = db.Column(db.String(50))
+    image_url = db.Column(db.String(200))
+    vendor_id = db.Column(db.Integer, db.ForeignKey('vendor.id'))
+    order_items = db.relationship('OrderItem', backref='dish', lazy=True)
+    reviews = db.relationship('Review', backref='dish', lazy=True)
 
-        new_dish = Dish(name=name, description=description, price=price,
-                        category=category, image_url=filename)
-        db.session.add(new_dish)
-        db.session.commit()
-        return redirect(url_for('index'))
-    return render_template('create.html')
+class Order(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    status = db.Column(db.String(50))
+    total_price = db.Column(db.Float)
+    created_at = db.Column(db.DateTime)
+    order_items = db.relationship('OrderItem', backref='order', lazy=True)
+    payment = db.relationship('Payment', backref='order', uselist=False)
 
-@app.route('/update/<int:id>', methods=['GET', 'POST'])
-@login_required
-def update(id):
-    dish = Dish.query.get_or_404(id)
-    if request.method == 'POST':
-        dish.name = request.form['name']
-        dish.description = request.form['description']
-        dish.price = float(request.form['price'])
-        dish.category = request.form['category']
-        image = request.files['image']
-        if image:
-            filename = secure_filename(image.filename)
-            image.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-            dish.image_url = filename
-        db.session.commit()
-        return redirect(url_for('index'))
-    return render_template('update.html', dish=dish)
+class OrderItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.Integer, db.ForeignKey('order.id'))
+    dish_id = db.Column(db.Integer, db.ForeignKey('dish.id'))
+    quantity = db.Column(db.Integer)
 
-@app.route('/delete/<int:id>', methods=['POST'])
-@login_required
-def delete(id):
-    dish = Dish.query.get_or_404(id)
-    db.session.delete(dish)
-    db.session.commit()
-    return redirect(url_for('index'))
+class Review(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    dish_id = db.Column(db.Integer, db.ForeignKey('dish.id'))
+    rating = db.Column(db.Integer)
+    comment = db.Column(db.Text)
+    created_at = db.Column(db.DateTime)
 
-@app.route('/home')
-def home():
-    dishes = Dish.query.limit(3).all()
-    return render_template('home.html', dishes=dishes)
+class Payment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.Integer, db.ForeignKey('order.id'))
+    method = db.Column(db.String(50))
+    amount = db.Column(db.Float)
+    status = db.Column(db.String(50))
+    transaction_id = db.Column(db.String(100))
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        if username == 'admin' and password == 'admin123':
-            session['admin_logged_in'] = True
-            return redirect(url_for('index'))
-        else:
-            flash('Invalid credentials. Please try again.', 'danger')
-    return render_template('login.html')
+class Notification(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer)
+    message = db.Column(db.String(255))
+    is_read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime)
 
-@app.route('/logout')
-def logout():
-    session.pop('admin_logged_in', None)
-    flash('You have been logged out.', 'info')
-    return redirect(url_for('login'))
+# ------------------ END MODELS ------------------
+
+# Continue with your route definitions and CRUD logic here...
 
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
     app.run(debug=True)
+
 
 
