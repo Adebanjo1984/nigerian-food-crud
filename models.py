@@ -8,3 +8,5 @@ class Dish(db.Model):
     description = db.Column(db.String(200))
     price = db.Column(db.Float, nullable=False)
     category = db.Column(db.String(50))
+    image_url = db.Column(db.String(200))  # NEW: stores the image path
+
