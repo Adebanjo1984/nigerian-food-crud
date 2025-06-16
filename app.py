@@ -3,6 +3,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from werkzeug.utils import secure_filename
 from functools import wraps
 from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///nigerian_food.db'
@@ -19,7 +20,7 @@ class User(db.Model):
     name = db.Column(db.String(100))
     email = db.Column(db.String(100), unique=True)
     password = db.Column(db.String(100))
-    role = db.Column(db.String(50))  # e.g. customer, vendor, admin
+    role = db.Column(db.String(50))
     reviews = db.relationship('Review', backref='user', lazy=True)
     orders = db.relationship('Order', backref='user', lazy=True)
 
@@ -45,7 +46,7 @@ class Order(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     status = db.Column(db.String(50))
     total_price = db.Column(db.Float)
-    created_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     order_items = db.relationship('OrderItem', backref='order', lazy=True)
     payment = db.relationship('Payment', backref='order', uselist=False)
 
@@ -80,24 +81,28 @@ class Notification(db.Model):
 
 # ------------------ ROUTES ------------------
 
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
-
 @app.route('/')
-@login_required
 def index():
-    dishes = Dish.query.all()
-    return render_template('index.html', dishes=dishes)
-
-@app.route('/home')
-def home():
     dishes = Dish.query.limit(3).all()
     return render_template('home.html', dishes=dishes)
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        name = request.form['name']
+        email = request.form['email']
+        password = request.form['password']
+        role = 'customer'
+        existing_user = User.query.filter_by(email=email).first()
+        if existing_user:
+            flash('Email already registered.', 'danger')
+            return redirect(url_for('register'))
+        new_user = User(name=name, email=email, password=password, role=role)
+        db.session.add(new_user)
+        db.session.commit()
+        flash('Registration successful. Please log in.', 'success')
+        return redirect(url_for('login'))
+    return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -107,33 +112,14 @@ def login():
         user = User.query.filter_by(email=email, password=password).first()
         if user:
             session['user_id'] = user.id
+            session['user_email'] = user.email
             session['user_role'] = user.role
-            flash('Logged in successfully.', 'success')
-            if user.role == 'admin':
-                return redirect(url_for('index'))
-            elif user.role == 'vendor':
+            flash('Login successful.', 'success')
+            if user.role == 'vendor':
                 return redirect(url_for('vendor_dashboard'))
-            else:
-                return redirect(url_for('home'))
-        else:
-            flash('Invalid credentials. Please try again.', 'danger')
+            return redirect(url_for('index'))
+        flash('Invalid credentials.', 'danger')
     return render_template('login.html')
-
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if request.method == 'POST':
-        name = request.form['name']
-        email = request.form['email']
-        password = request.form['password']
-        if User.query.filter_by(email=email).first():
-            flash('Email already registered.', 'warning')
-        else:
-            new_user = User(name=name, email=email, password=password, role='customer')
-            db.session.add(new_user)
-            db.session.commit()
-            flash('Registration successful. Please log in.', 'success')
-            return redirect(url_for('login'))
-    return render_template('register.html')
 
 @app.route('/logout')
 def logout():
@@ -141,70 +127,68 @@ def logout():
     flash('You have been logged out.', 'info')
     return redirect(url_for('login'))
 
-@app.route('/create', methods=['GET', 'POST'])
-@login_required
-def create():
-    if request.method == 'POST':
-        name = request.form['name']
-        description = request.form['description']
-        price = request.form['price']
-        category = request.form['category']
-        image = request.files['image']
-        image_filename = secure_filename(image.filename)
-        image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
-        image.save(image_path)
-        new_dish = Dish(name=name, description=description, price=price, category=category, image_url=image_filename)
-        db.session.add(new_dish)
-        db.session.commit()
-        flash('Dish added successfully.', 'success')
-        return redirect(url_for('index'))
-    return render_template('create.html')
+@app.route('/vendor')
+def vendor_dashboard():
+    if 'user_role' in session and session['user_role'] == 'vendor':
+        return render_template('vendor_dashboard.html')
+    flash('Access restricted to vendors.', 'danger')
+    return redirect(url_for('login'))
 
-@app.route('/update/<int:id>', methods=['GET', 'POST'])
+@app.route('/checkout/<int:order_id>', methods=['GET', 'POST'])
 @login_required
-def update(id):
-    dish = Dish.query.get_or_404(id)
+def checkout(order_id):
+    order = Order.query.get_or_404(order_id)
     if request.method == 'POST':
-        dish.name = request.form['name']
-        dish.description = request.form['description']
-        dish.price = request.form['price']
-        dish.category = request.form['category']
-        image = request.files['image']
-        if image:
-            image_filename = secure_filename(image.filename)
-            image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
-            image.save(image_path)
-            dish.image_url = image_filename
+        method = request.form['method']
+        transaction_id = request.form['transaction_id']
+        payment = Payment(order_id=order.id, method=method, amount=order.total_price, status='Paid', transaction_id=transaction_id)
+        db.session.add(payment)
+        order.status = 'Paid'
         db.session.commit()
-        flash('Dish updated successfully.', 'info')
-        return redirect(url_for('index'))
-    return render_template('update.html', dish=dish)
+        flash('Payment successful!', 'success')
+        return redirect(url_for('my_orders'))
+    return render_template('checkout.html', order=order)
 
-@app.route('/delete/<int:id>')
+@app.route('/order/<int:dish_id>', methods=['POST'])
 @login_required
-def delete(id):
-    dish = Dish.query.get_or_404(id)
-    db.session.delete(dish)
+def place_order(dish_id):
+    quantity = int(request.form['quantity'])
+    dish = Dish.query.get_or_404(dish_id)
+    total_price = dish.price * quantity
+    order = Order(user_id=session['user_id'], status='Pending', total_price=total_price)
+    db.session.add(order)
     db.session.commit()
-    flash('Dish deleted successfully.', 'danger')
+
+    order_item = OrderItem(order_id=order.id, dish_id=dish.id, quantity=quantity)
+    db.session.add(order_item)
+    db.session.commit()
+
+    flash('Order placed successfully!', 'success')
     return redirect(url_for('index'))
 
-@app.route('/vendor/dashboard')
+@app.route('/my-orders')
 @login_required
-def vendor_dashboard():
+def my_orders():
+    orders = Order.query.filter_by(user_id=session['user_id']).all()
+    return render_template('my_orders.html', orders=orders)
+
+@app.route('/vendor/orders')
+@login_required
+def vendor_orders():
     if session.get('user_role') != 'vendor':
         flash('Unauthorized access.', 'danger')
-        return redirect(url_for('home'))
+        return redirect(url_for('index'))
     vendor = Vendor.query.filter_by(contact_email=session.get('user_email')).first()
-    dishes = Dish.query.filter_by(vendor_id=vendor.id).all() if vendor else []
-    return render_template('vendor_dashboard.html', dishes=dishes)
-
-# ------------------ END ROUTES ------------------
+    dishes = Dish.query.filter_by(vendor_id=vendor.id).all()
+    dish_ids = [dish.id for dish in dishes]
+    order_items = OrderItem.query.filter(OrderItem.dish_id.in_(dish_ids)).all()
+    return render_template('vendor_orders.html', order_items=order_items)
 
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
     app.run(debug=True)
+
 
 
 
