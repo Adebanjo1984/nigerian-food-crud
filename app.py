@@ -83,7 +83,7 @@ class Notification(db.Model):
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if 'admin_logged_in' not in session:
+        if 'user_id' not in session:
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
@@ -109,7 +109,12 @@ def login():
             session['user_id'] = user.id
             session['user_role'] = user.role
             flash('Logged in successfully.', 'success')
-            return redirect(url_for('home'))
+            if user.role == 'admin':
+                return redirect(url_for('index'))
+            elif user.role == 'vendor':
+                return redirect(url_for('vendor_dashboard'))
+            else:
+                return redirect(url_for('home'))
         else:
             flash('Invalid credentials. Please try again.', 'danger')
     return render_template('login.html')
@@ -184,12 +189,23 @@ def delete(id):
     flash('Dish deleted successfully.', 'danger')
     return redirect(url_for('index'))
 
+@app.route('/vendor/dashboard')
+@login_required
+def vendor_dashboard():
+    if session.get('user_role') != 'vendor':
+        flash('Unauthorized access.', 'danger')
+        return redirect(url_for('home'))
+    vendor = Vendor.query.filter_by(contact_email=session.get('user_email')).first()
+    dishes = Dish.query.filter_by(vendor_id=vendor.id).all() if vendor else []
+    return render_template('vendor_dashboard.html', dishes=dishes)
+
 # ------------------ END ROUTES ------------------
 
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
     app.run(debug=True)
+
 
 
 
