@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Update Dish</title>
+</head>
+<body>
+    <h1>Update Dish</h1>
+    <form method="post">
+        <label>Name:</label>
+        <input type="text" name="name" value="{{ dish.name }}" required><br><br>
+
+        <label>Description:</label>
+        <input type="text" name="description" value="{{ dish.description }}"><br><br>
+
+        <label>Price:</label>
+        <input type="number" step="0.01" name="price" value="{{ dish.price }}" required><br><br>
+
+        <label>Category:</label>
+        <input type="text" name="category" value="{{ dish.category }}"><br><br>
+
+        <button type="submit">Update</button>
+    </form>
+    <br>
+    <a href="/">Back to Menu</a>
+</body>
+</html>
