@@ -192,6 +192,12 @@ def vendor_orders():
     dish_ids = [dish.id for dish in dishes]
     order_items = OrderItem.query.filter(OrderItem.dish_id.in_(dish_ids)).all()
     return render_template('vendor_orders.html', order_items=order_items)
+    
+@app.route('/init-db')
+def init_db():
+    with app.app_context():
+        db.create_all()
+    return "Database initialized!"
 
 if __name__ == '__main__':
     with app.app_context():
