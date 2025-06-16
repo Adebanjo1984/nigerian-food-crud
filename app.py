@@ -10,6 +10,10 @@ app.config['UPLOAD_FOLDER'] = 'static/images'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 db.init_app(app)
+@app.route('/home')
+def home():
+    dishes = Dish.query.limit(3).all()
+    return render_template('home.html', dishes=dishes)
 
 @app.route('/')
 def index():
