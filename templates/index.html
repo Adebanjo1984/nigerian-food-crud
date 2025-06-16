@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Nigerian Food Menu</title>
+</head>
+<body>
+    <h1>Nigerian Food Menu</h1>
+    <a href="/create">Add New Dish</a>
+    <ul>
+        {% for dish in dishes %}
+            <li>
+                <strong>{{ dish.name }}</strong> - {{ dish.category }} - ${{ dish.price }}<br>
+                <em>{{ dish.description }}</em><br>
+                <a href="/update/{{ dish.id }}">Edit</a>
+                <form action="/delete/{{ dish.id }}" method="post" style="display:inline;">
+                    <button type="submit">Delete</button>
+                </form>
+            </li>
+            <hr>
+        {% endfor %}
+    </ul>
+</body>
+</html>
