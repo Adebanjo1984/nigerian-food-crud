@@ -193,6 +193,36 @@ def vendor_orders():
     order_items = OrderItem.query.filter(OrderItem.dish_id.in_(dish_ids)).all()
     return render_template('vendor_orders.html', order_items=order_items)
 
+@app.route('/add-dish', methods=['POST'])
+@login_required
+def add_dish():
+    if session.get('user_role') != 'vendor':
+        flash('Unauthorized access.', 'danger')
+        return redirect(url_for('index'))
+
+    name = request.form['name']
+    description = request.form['description']
+    price = float(request.form['price'])
+    category = request.form['category']
+    image = request.files['image']
+    filename = secure_filename(image.filename)
+    image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    image.save(image_path)
+
+    vendor = Vendor.query.filter_by(contact_email=session.get('user_email')).first()
+    new_dish = Dish(
+        name=name,
+        description=description,
+        price=price,
+        category=category,
+        image_url=f'/static/images/{filename}',
+        vendor_id=vendor.id
+    )
+    db.session.add(new_dish)
+    db.session.commit()
+    flash('Dish added successfully.', 'success')
+    return redirect(url_for('vendor_dashboard'))
+
 @app.route('/init-db')
 def init_db():
     with app.app_context():
